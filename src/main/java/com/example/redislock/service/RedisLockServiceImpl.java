@@ -23,7 +23,7 @@ public class RedisLockServiceImpl implements RedisLockService {
     @Override
     public void redisLockTest() {
         CompletableFuture.runAsync(() -> runTask(1, 3000));
-        CompletableFuture.runAsync(() -> runTask(2, 6000));
+        CompletableFuture.runAsync(() -> runTask(2, 8000));
         CompletableFuture.runAsync(() -> runTask(3, 3000));
         CompletableFuture.runAsync(() -> runTask(4, 2000));
     }
@@ -32,10 +32,11 @@ public class RedisLockServiceImpl implements RedisLockService {
     public void runTask(int taskNo, long sleep) {
 
         RLock rLock = redissonClient.getLock(LOCK_KEY_NAME);
+        boolean lockAcquired = false;
         try {
             log.info("Running task: {}", taskNo);
 
-            boolean lockAcquired = rLock.tryLock(LOCK_WAIT_TIME_IN_SECONDS, LOCK_TIMEOUT_IN_SECONDS, TimeUnit.SECONDS);
+            lockAcquired = rLock.tryLock(LOCK_WAIT_TIME_IN_SECONDS, LOCK_TIMEOUT_IN_SECONDS, TimeUnit.SECONDS);
 
             if (lockAcquired) {
                 log.info("Lock acquired. Hence, sleeping for {} ms for executing task: {}", sleep, taskNo);
@@ -48,8 +49,14 @@ public class RedisLockServiceImpl implements RedisLockService {
             Thread.currentThread().interrupt();
             log.error(ex.getMessage());
         } finally{
+            if(lockAcquired && rLock.isLocked()) {
                 rLock.unlock();
                 log.info("Successfully released lock after executing task: {}", taskNo);
+            } else if(lockAcquired) {
+                log.info("Lock lease time has expired and hence the lock is automatically released for task: {}", taskNo);
+            } else {
+                log.info("Lock is acquired but not by the current thread and hence cannot release the lock for task: {}", taskNo);
+            }
         }
     }
 }
